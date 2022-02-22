@@ -28,6 +28,9 @@ of power-user configuration options to simplify the core compressor data path.
   * **Feature:** The `-perceptual` option to set a perceptual error metric is
     still supported, but is currently a no-op in the compressor for mask map
     and normal map textures.
+* **Binary releases:**
+  * **Improvement:** Windows binaries changed to use ClangCL 12.0, which gives
+    up to 10% performance improvement.
 
 ### Performance:
 
