@@ -52,7 +52,39 @@ add_library(${ASTC_TARGET}-static
         astcenc_weight_align.cpp
         astcenc_weight_quant_xfer_tables.cpp)
 
+add_library(lib${ASTC_TARGET}
+    SHARED
+        astcenc_averages_and_directions.cpp
+        astcenc_block_sizes.cpp
+        astcenc_color_quantize.cpp
+        astcenc_color_unquantize.cpp
+        astcenc_compress_symbolic.cpp
+        astcenc_compute_variance.cpp
+        astcenc_decompress_symbolic.cpp
+        astcenc_diagnostic_trace.cpp
+        astcenc_entry.cpp
+        astcenc_find_best_partitioning.cpp
+        astcenc_ideal_endpoints_and_weights.cpp
+        astcenc_image.cpp
+        astcenc_integer_sequence.cpp
+        astcenc_mathlib.cpp
+        astcenc_mathlib_softfloat.cpp
+        astcenc_partition_tables.cpp
+        astcenc_percentile_tables.cpp
+        astcenc_pick_best_endpoint_format.cpp
+        astcenc_platform_isa_detection.cpp
+        astcenc_quantization.cpp
+        astcenc_symbolic_physical.cpp
+        astcenc_weight_align.cpp
+        astcenc_weight_quant_xfer_tables.cpp)
+
 target_include_directories(${ASTC_TARGET}-static
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:.>)
+
+        
+target_include_directories(lib${ASTC_TARGET}
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:.>)
@@ -258,6 +290,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 astcenc_set_properties(${ASTC_TARGET}-static)
+astcenc_set_properties(lib${ASTC_TARGET})
+target_compile_definitions(lib${ASTC_TARGET} PRIVATE ASTCENC_DYNAMIC_LIBRARY=1)
 
 if(${CLI})
     astcenc_set_properties(${ASTC_TARGET})
