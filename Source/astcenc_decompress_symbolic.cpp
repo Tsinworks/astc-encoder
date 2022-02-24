@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ----------------------------------------------------------------------------
-// Copyright 2011-2021 Arm Limited
+// Copyright 2011-2022 Arm Limited
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy
@@ -171,6 +171,20 @@ void unpack_weights(
 	}
 }
 
+/**
+ * @brief Return an FP32 NaN value for use in error colors.
+ *
+ * This NaN encoding will turn into 0xFFFF when converted to an FP16 NaN.
+ *
+ * @return The float color value.
+ */
+static float error_color_nan()
+{
+	if32 v;
+	v.u = 0xFFFFE000U;
+	return v.f;
+}
+
 /* See header for documentation. */
 void decompress_symbolic_block(
 	astcenc_profile decode_mode,
@@ -186,6 +200,7 @@ void decompress_symbolic_block(
 	blk.zpos = zpos;
 
 	blk.data_min = vfloat4::zero();
+	blk.data_mean = vfloat4::zero();
 	blk.data_max = vfloat4::zero();
 	blk.grayscale = false;
 
@@ -194,10 +209,10 @@ void decompress_symbolic_block(
 	{
 		for (unsigned int i = 0; i < bsd.texel_count; i++)
 		{
-			blk.data_r[i] = std::numeric_limits<float>::quiet_NaN();
-			blk.data_g[i] = std::numeric_limits<float>::quiet_NaN();
-			blk.data_b[i] = std::numeric_limits<float>::quiet_NaN();
-			blk.data_a[i] = std::numeric_limits<float>::quiet_NaN();
+			blk.data_r[i] = error_color_nan();
+			blk.data_g[i] = error_color_nan();
+			blk.data_b[i] = error_color_nan();
+			blk.data_a[i] = error_color_nan();
 			blk.rgb_lns[i] = 0;
 			blk.alpha_lns[i] = 0;
 		}
@@ -233,7 +248,7 @@ void decompress_symbolic_block(
 			{
 			case ASTCENC_PRF_LDR_SRGB:
 			case ASTCENC_PRF_LDR:
-				color = vfloat4(std::numeric_limits<float>::quiet_NaN());
+				color = vfloat4(error_color_nan());
 				break;
 			case ASTCENC_PRF_HDR_RGB_LDR_A:
 			case ASTCENC_PRF_HDR:
@@ -321,8 +336,7 @@ float compute_symbolic_block_difference(
 	const astcenc_config& config,
 	const block_size_descriptor& bsd,
 	const symbolic_compressed_block& scb,
-	const image_block& blk,
-	const error_weight_block& ewb
+	const image_block& blk
 ) {
 	// If we detected an error-block, blow up immediately.
 	if (scb.block_type == SYM_BTYPE_ERROR)
@@ -415,7 +429,7 @@ float compute_symbolic_block_difference(
 			error = min(abs(error), 1e15f);
 			error = error * error;
 
-			float metric = dot_s(error, ewb.error_weights[tix]);
+			float metric = dot_s(error, blk.channel_weight);
 			summa += astc::min(metric, ERROR_CALC_DEFAULT);
 		}
 	}

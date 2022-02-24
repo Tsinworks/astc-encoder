@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ----------------------------------------------------------------------------
-// Copyright 2011-2021 Arm Limited
+// Copyright 2011-2022 Arm Limited
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy
@@ -66,6 +66,13 @@
 /* ============================================================================
   Constants
 ============================================================================ */
+#if !defined(ASTCENC_BLOCK_MAX_TEXELS)
+	#define ASTCENC_BLOCK_MAX_TEXELS 216 // A 3D 6x6x6 block
+#endif
+
+/** @brief The maximum number of texels a block can support (6x6x6 block). */
+static constexpr unsigned int BLOCK_MAX_TEXELS { ASTCENC_BLOCK_MAX_TEXELS };
+
 /** @brief The maximum number of components a block can support. */
 static constexpr unsigned int BLOCK_MAX_COMPONENTS { 4 };
 
@@ -74,9 +81,6 @@ static constexpr unsigned int BLOCK_MAX_PARTITIONS { 4 };
 
 /** @brief The number of partitionings, per partition count, suported by the ASTC format. */
 static constexpr unsigned int BLOCK_MAX_PARTITIONINGS { 1024 };
-
-/** @brief The maximum number of texels a block can support (6x6x6 block). */
-static constexpr unsigned int BLOCK_MAX_TEXELS { 216 };
 
 /** @brief The maximum number of weights used during partition selection for texel clustering. */
 static constexpr uint8_t BLOCK_MAX_KMEANS_TEXELS { 64 };
@@ -458,15 +462,6 @@ static inline unsigned int get_quant_level(quant_method method)
  */
 struct partition_metrics
 {
-	/** @brief The sum of the error weights for texels in this partition. */
-	vfloat4 error_weight;
-
-	/** @brief The color scale factor used to weight color channels. */
-	vfloat4 color_scale;
-
-	/** @brief The 1 / color_scale used to avoid divisions. */
-	vfloat4 icolor_scale;
-
 	/** @brief The error-weighted average color in the partition. */
 	vfloat4 avg;
 
@@ -819,10 +814,16 @@ struct image_block
 	/** @brief The min component value of all texels in the block. */
 	vfloat4 data_min;
 
+	/** @brief The mean component value of all texels in the block. */
+	vfloat4 data_mean;
+
 	/** @brief The max component value of all texels in the block. */
 	vfloat4 data_max;
 
-	/** @brief Is this greyscale block where R == G == B for all texels? */
+	/** @brief The relative error significance of the color channels. */
+	vfloat4 channel_weight;
+
+	/** @brief Is this grayscale block where R == G == B for all texels? */
 	bool grayscale;
 
 	/** @brief Set to 1 if a texel is using HDR RGB endpoints (decompression only). */
@@ -925,85 +926,6 @@ struct image_block
 };
 
 /**
- * @brief Data structure representing per-texel and per-component error weights for a block.
- *
- * This structure stores a multiplier for the error weight to apply to each component when computing
- * block errors. This can be used as a general purpose technique to to amplify or diminish the
- * significance of texels and individual color components, based on what is being stored and the
- * compressor heuristics. It can be applied in many different ways, some of which are outlined in
- * the description below (this is not exhaustive).
- *
- * For blocks that span the edge of the texture, the weighting for texels outside of the texture
- * bounds can zeroed to maximize the quality of the texels inside the texture.
- *
- * For textures storing fewer than 4 components the weighting for color components that are unused
- * can be zeroed to maximize the quality of the components that are used. This is particularly
- * important for two component textures, which must be imported in LLLA format to match the two
- * component endpoint encoding. Without manual component weighting to correct significance the "L"
- * would be treated as three times more important than A because of the replication.
- *
- * For HDR textures we can use perceptual weighting which os approximately inverse to the luminance
- * of a texel.
- *
- * For normal maps we can use perceptual weighting which assigns higher weight to low-variability
- * regions than to high-variability regions, ensuring smooth surfaces don't pick up artifacts.
- *
- * For transparent texels we can multiply the RGB weights by the alpha value, ensuring that
- * the least transprent texels maintain the highest accuracy.
- */
-struct error_weight_block
-{
-	/** @brief Block error weighted RGBA sum for whole block / 1 partition. */
-	vfloat4 block_error_weighted_rgba_sum;
-
-	/** @brief Block error sum for whole block / 1 partition. */
-	vfloat4 block_error_weight_sum;
-
-	/** @brief The full per texel per component error weights. */
-	vfloat4 error_weights[BLOCK_MAX_TEXELS];
-
-
-	/** @brief The full per texel per component error weights. */
-	float texel_weight[BLOCK_MAX_TEXELS];
-
-
-	/** @brief The average of the GBA error weights per texel. */
-	float texel_weight_gba[BLOCK_MAX_TEXELS];
-
-	/** @brief The average of the RBA error weights per texel. */
-	float texel_weight_rba[BLOCK_MAX_TEXELS];
-
-	/** @brief The average of the RGA error weights per texel. */
-	float texel_weight_rga[BLOCK_MAX_TEXELS];
-
-	/** @brief The average of the RGB error weights per texel. */
-	float texel_weight_rgb[BLOCK_MAX_TEXELS];
-
-
-	/** @brief The average of the RG error weights per texel. */
-	float texel_weight_rg[BLOCK_MAX_TEXELS];
-
-	/** @brief The average of the RB error weights per texel. */
-	float texel_weight_rb[BLOCK_MAX_TEXELS];
-
-	/** @brief The average of the GB error weights per texel. */
-	float texel_weight_gb[BLOCK_MAX_TEXELS];
-
-
-	/** @brief The individual R component error weights per texel. */
-	float texel_weight_r[BLOCK_MAX_TEXELS];
-
-	/** @brief The individual G component error weights per texel. */
-	float texel_weight_g[BLOCK_MAX_TEXELS];
-
-	/** @brief The individual B component error weights per texel. */
-	float texel_weight_b[BLOCK_MAX_TEXELS];
-
-	/** @brief The individual A component error weights per texel. */
-	float texel_weight_a[BLOCK_MAX_TEXELS];
-};
-
-/**
  * @brief Data structure storing the color endpoints for a block.
  */
 struct endpoints
@@ -1077,9 +999,6 @@ struct alignas(ASTCENC_VECALIGN) compression_working_buffers
 	/** @brief Ideal decimated endpoints and weights for plane 2. */
 	endpoints_and_weights eix2[WEIGHTS_MAX_DECIMATION_MODES];
 
-	/** @brief The error weight block for the current thread. */
-	error_weight_block ewb;
-
 	/**
 	 * @brief Decimated ideal weight values.
 	 *
@@ -1107,6 +1026,59 @@ struct alignas(ASTCENC_VECALIGN) compression_working_buffers
 	 * For two plane encodings, second plane weights start at @c WEIGHTS_PLANE2_OFFSET offsets.
 	 */
 	alignas(ASTCENC_VECALIGN) uint8_t dec_weights_quant_pvalue[WEIGHTS_MAX_BLOCK_MODES * BLOCK_MAX_WEIGHTS];
+
+	/** @brief Error of the best encoding combination for each block mode. */
+	alignas(ASTCENC_VECALIGN) float errors_of_best_combination[WEIGHTS_MAX_BLOCK_MODES];
+
+	/** @brief The best color quant for each block mode. */
+	alignas(ASTCENC_VECALIGN) quant_method best_quant_levels[WEIGHTS_MAX_BLOCK_MODES];
+
+	/** @brief The best color quant for each block mode if modes are the same and we have spare bits. */
+	quant_method best_quant_levels_mod[WEIGHTS_MAX_BLOCK_MODES];
+
+	/** @brief The best endpoint format for each partition. */
+	int best_ep_formats[WEIGHTS_MAX_BLOCK_MODES][BLOCK_MAX_PARTITIONS];
+
+	/** @brief The total bit storage needed for quantized weights for each block mode. */
+	int qwt_bitcounts[WEIGHTS_MAX_BLOCK_MODES];
+
+	/** @brief The cumulative error for quantized weights for each block mode. */
+	float qwt_errors[WEIGHTS_MAX_BLOCK_MODES];
+
+	/** @brief The low weight value in plane 1 for each block mode. */
+	float weight_low_value1[WEIGHTS_MAX_BLOCK_MODES];
+
+	/** @brief The high weight value in plane 1 for each block mode. */
+	float weight_high_value1[WEIGHTS_MAX_BLOCK_MODES];
+
+	/** @brief The low weight value in plane 1 for each quant level and decimation mode. */
+	float weight_low_values1[WEIGHTS_MAX_DECIMATION_MODES][12];
+
+	/** @brief The high weight value in plane 1 for each quant level and decimation mode. */
+	float weight_high_values1[WEIGHTS_MAX_DECIMATION_MODES][12];
+
+	/** @brief The low weight value in plane 2 for each block mode. */
+	float weight_low_value2[WEIGHTS_MAX_BLOCK_MODES];
+
+	/** @brief The high weight value in plane 2 for each block mode. */
+	float weight_high_value2[WEIGHTS_MAX_BLOCK_MODES];
+
+	/** @brief The low weight value in plane 2 for each quant level and decimation mode. */
+	float weight_low_values2[WEIGHTS_MAX_DECIMATION_MODES][12];
+
+	/** @brief The high weight value in plane 2 for each quant level and decimation mode. */
+	float weight_high_values2[WEIGHTS_MAX_DECIMATION_MODES][12];
+};
+
+struct dt_init_working_buffers
+{
+	uint8_t weight_count_of_texel[BLOCK_MAX_TEXELS];
+	uint8_t grid_weights_of_texel[BLOCK_MAX_TEXELS][4];
+	uint8_t weights_of_texel[BLOCK_MAX_TEXELS][4];
+
+	uint8_t texel_count_of_weight[BLOCK_MAX_WEIGHTS];
+	uint8_t texels_of_weight[BLOCK_MAX_WEIGHTS][BLOCK_MAX_TEXELS];
+	uint8_t texel_weights_of_weight[BLOCK_MAX_WEIGHTS][BLOCK_MAX_TEXELS];
 };
 
 /**
@@ -1241,25 +1213,16 @@ struct physical_compressed_block
  * This function takes a structure to avoid spilling arguments to the stack on every function
  * invocation, as there are a lot of parameters.
  */
-struct pixel_region_variance_args
+struct pixel_region_args
 {
 	/** @brief The image to analyze. */
 	const astcenc_image* img;
-
-	/** @brief The RGB component power adjustment. */
-	float rgb_power;
-
-	/** @brief The alpha component power adjustment. */
-	float alpha_power;
 
 	/** @brief The component swizzle pattern. */
 	astcenc_swizzle swz;
 
 	/** @brief Should the algorithm bother with Z axis processing? */
 	bool have_z;
-
-	/** @brief The kernel radius for average and variance. */
-	unsigned int avg_var_kernel_radius;
 
 	/** @brief The kernel radius for alpha processing. */
 	unsigned int alpha_kernel_radius;
@@ -1287,12 +1250,12 @@ struct pixel_region_variance_args
 };
 
 /**
- * @brief Parameter structure for @c compute_averages_and_variances_proc().
+ * @brief Parameter structure for @c compute_averages_proc().
  */
-struct avg_var_args
+struct avg_args
 {
 	/** @brief The arguments for the nested variance computation. */
-	pixel_region_variance_args arg;
+	pixel_region_args arg;
 
 	// The above has a reference to the image altread?
 	/** @brief The image X dimensions. */
@@ -1339,28 +1302,21 @@ struct astcenc_context
 	 * large structure size are omitted.
 	 */
 
-	/** @brief The input images averages table, may be @c nullptr if not needed. */
-	vfloat4 *input_averages;
-
-	/** @brief The input image RGBA channel variances table, may be @c nullptr if not needed. */
-	vfloat4 *input_variances;
-
-	/** @brief The input image alpha channel variances table, may be @c nullptr if not needed. */
+	/** @brief The input image alpha channel averages table, may be @c nullptr if not needed. */
 	float *input_alpha_averages;
-
 
 	/** @brief The scratch workign buffers, one per thread (see @c thread_count). */
 	compression_working_buffers* working_buffers;
 
 #if !defined(ASTCENC_DECOMPRESS_ONLY)
 	/** @brief The pixel region and variance worker arguments. */
-	avg_var_args avg_var_preprocess_args;
+	avg_args avg_preprocess_args;
 
 	/** @brief The per-texel deblocking weights for the current block size. */
 	float deblock_weights[BLOCK_MAX_TEXELS];
 
-	/** @brief The parallel manager for averages and variances computation. */
-	ParallelManager manage_avg_var;
+	/** @brief The parallel manager for averages computation. */
+	ParallelManager manage_avg;
 
 	/** @brief The parallel manager for compression. */
 	ParallelManager manage_compress;
@@ -1550,7 +1506,6 @@ unsigned int get_ise_sequence_bitcount(
  *
  * @param      pi           The partition info for the current trial.
  * @param      blk          The image block color data to be compressed.
- * @param      ewb          The image block weighted error data.
  * @param      component1   The first component included in the analysis.
  * @param      component2   The second component included in the analysis.
  * @param[out] pm           The output partition metrics.
@@ -1560,7 +1515,6 @@ unsigned int get_ise_sequence_bitcount(
 void compute_avgs_and_dirs_2_comp(
 	const partition_info& pi,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	unsigned int component1,
 	unsigned int component2,
 	partition_metrics pm[BLOCK_MAX_PARTITIONS]);
@@ -1570,7 +1524,6 @@ void compute_avgs_and_dirs_2_comp(
  *
  * @param      pi                  The partition info for the current trial.
  * @param      blk                 The image block color data to be compressed.
- * @param      ewb                 The image block weighted error data.
  * @param      omitted_component   The component excluded from the analysis.
  * @param[out] pm                  The output partition metrics.
  *                                 - Only pi.partition_count array entries actually get initialized.
@@ -1579,7 +1532,6 @@ void compute_avgs_and_dirs_2_comp(
 void compute_avgs_and_dirs_3_comp(
 	const partition_info& pi,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	unsigned int omitted_component,
 	partition_metrics pm[BLOCK_MAX_PARTITIONS]);
 
@@ -1591,7 +1543,6 @@ void compute_avgs_and_dirs_3_comp(
  *
  * @param      pi                  The partition info for the current trial.
  * @param      blk                 The image block color data to be compressed.
- * @param      ewb                 The image block weighted error data.
  * @param[out] pm                  The output partition metrics.
  *                                 - Only pi.partition_count array entries actually get initialized.
  *                                 - Direction vectors @c pm.dir are not normalized.
@@ -1599,7 +1550,6 @@ void compute_avgs_and_dirs_3_comp(
 void compute_avgs_and_dirs_3_comp_rgb(
 	const partition_info& pi,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	partition_metrics pm[BLOCK_MAX_PARTITIONS]);
 
 /**
@@ -1607,7 +1557,6 @@ void compute_avgs_and_dirs_3_comp_rgb(
  *
  * @param      pi    The partition info for the current trial.
  * @param      blk   The image block color data to be compressed.
- * @param      ewb   The image block weighted error data.
  * @param[out] pm    The output partition metrics.
  *                   - Only pi.partition_count array entries actually get initialized.
  *                   - Direction vectors @c pm.dir are not normalized.
@@ -1615,7 +1564,6 @@ void compute_avgs_and_dirs_3_comp_rgb(
 void compute_avgs_and_dirs_4_comp(
 	const partition_info& pi,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	partition_metrics pm[BLOCK_MAX_PARTITIONS]);
 
 /**
@@ -1630,7 +1578,6 @@ void compute_avgs_and_dirs_4_comp(
  *
  * @param         pi              The partition info for the current trial.
  * @param         blk             The image block color data to be compressed.
- * @param         ewb             The image block weighted error data.
  * @param[in,out] plines          Processed line inputs, and line length outputs.
  * @param[out]    uncor_error     The cumulative error for using the uncorrelated line.
  * @param[out]    samec_error     The cumulative error for using the same chroma line.
@@ -1638,7 +1585,6 @@ void compute_avgs_and_dirs_4_comp(
 void compute_error_squared_rgb(
 	const partition_info& pi,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	partition_lines3 plines[BLOCK_MAX_PARTITIONS],
 	float& uncor_error,
 	float& samec_error);
@@ -1655,7 +1601,6 @@ void compute_error_squared_rgb(
  *
  * @param      pi              The partition info for the current trial.
  * @param      blk             The image block color data to be compressed.
- * @param      ewb             The image block weighted error data.
  * @param      uncor_plines    Processed uncorrelated partition lines for each partition.
  * @param      samec_plines    Processed same chroma partition lines for each partition.
  * @param[out] uncor_lengths   The length of each components deviation from the line.
@@ -1666,7 +1611,6 @@ void compute_error_squared_rgb(
 void compute_error_squared_rgba(
 	const partition_info& pi,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	const processed_line4 uncor_plines[BLOCK_MAX_PARTITIONS],
 	const processed_line4 samec_plines[BLOCK_MAX_PARTITIONS],
 	float uncor_lengths[BLOCK_MAX_PARTITIONS],
@@ -1683,7 +1627,6 @@ void compute_error_squared_rgba(
  *
  * @param      bsd                        The block size information.
  * @param      blk                        The image block color data to compress.
- * @param      ewb                        The image block weighted error data.
  * @param      partition_count            The number of partitions in the block.
  * @param      partition_search_limit     The number of candidate partition encodings to trial.
  * @param[out] best_partitions            The best partition candidates.
@@ -1691,7 +1634,6 @@ void compute_error_squared_rgba(
 void find_best_partition_candidates(
 	const block_size_descriptor& bsd,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	unsigned int partition_count,
 	unsigned int partition_search_limit,
 	unsigned int best_partitions[2]);
@@ -1701,48 +1643,40 @@ void find_best_partition_candidates(
 ============================================================================ */
 
 /**
- * @brief Setup computation of regional averages and variances in an image.
+ * @brief Setup computation of regional averages in an image.
  *
  * This must be done by only a single thread per image, before any thread calls
- * @c compute_averages_and_variances().
+ * @c compute_averages().
  *
- * Results are written back into @c img->input_averages, @c img->input_variances,
- * and @c img->input_alpha_averages.
+ * Results are written back into @c img->input_alpha_averages.
  *
  * @param      img                     The input image data, also holds output data.
- * @param      rgb_power               The RGB component power.
- * @param      alpha_power             The A component power.
- * @param      avg_var_kernel_radius   The kernel radius (in pixels) for avg and var.
  * @param      alpha_kernel_radius     The kernel radius (in pixels) for alpha mods.
  * @param      swz                     Input data component swizzle.
  * @param[out] ag                      The average variance arguments to init.
  *
  * @return The number of tasks in the processing stage.
  */
-unsigned int init_compute_averages_and_variances(
+unsigned int init_compute_averages(
 	const astcenc_image& img,
-	float rgb_power,
-	float alpha_power,
-	unsigned int avg_var_kernel_radius,
 	unsigned int alpha_kernel_radius,
 	const astcenc_swizzle& swz,
-	avg_var_args& ag);
+	avg_args& ag);
 
 /**
- * @brief Compute regional averages and variances.
+ * @brief Compute regional averages in an image.
  *
- * This function can be called by multiple threads, but only after a single thread calls the setup
- * function @c init_compute_averages_and_variances().
+ * This function can be called by multiple threads, but only after a single
+ * thread calls the setup function @c init_compute_averages().
  *
- * Results are written back into @c img->input_averages, @c img->input_variances,
- * and @c img->input_alpha_averages.
+ * Results are written back into @c img->input_alpha_averages.
  *
  * @param[out] ctx   The context.
  * @param      ag    The average and variance arguments created during setup.
  */
-void compute_averages_and_variances(
+void compute_averages(
 	astcenc_context& ctx,
-	const avg_var_args& ag);
+	const avg_args& ag);
 
 /**
  * @brief Fetch a single image block from the input image
@@ -1799,14 +1733,12 @@ void write_image_block(
  *
  * @param      bsd   The block size information.
  * @param      blk   The image block color data to compress.
- * @param      ewb   The image block weighted error data.
  * @param      pi    The partition info for the current trial.
  * @param[out] ei    The endpoint and weight values.
  */
 void compute_ideal_colors_and_weights_1plane(
 	const block_size_descriptor& bsd,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	const partition_info& pi,
 	endpoints_and_weights& ei);
 
@@ -1819,7 +1751,6 @@ void compute_ideal_colors_and_weights_1plane(
  *
  * @param      bsd                The block size information.
  * @param      blk                The image block color data to compress.
- * @param      ewb                The image block weighted error data.
  * @param      plane2_component   The component assigned to plane 2.
  * @param[out] ei1                The endpoint and weight values for plane 1.
  * @param[out] ei2                The endpoint and weight values for plane 2.
@@ -1827,7 +1758,6 @@ void compute_ideal_colors_and_weights_1plane(
 void compute_ideal_colors_and_weights_2planes(
 	const block_size_descriptor& bsd,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	unsigned int plane2_component,
 	endpoints_and_weights& ei1,
 	endpoints_and_weights& ei2);
@@ -2054,7 +1984,6 @@ void unpack_weights(
  * @param      bsd                           The block size information.
  * @param      pi                            The partition info for the current trial.
  * @param      blk                           The image block color data to compress.
- * @param      ewb                           The image block weighted error data.
  * @param      ep                            The ideal endpoints.
  * @param      qwt_bitcounts                 Bit counts for different quantization methods.
  * @param      qwt_errors                    Errors for different quantization methods.
@@ -2063,6 +1992,7 @@ void unpack_weights(
  * @param[out] block_mode                    The best packed block mode indexes.
  * @param[out] quant_level                   The best color quant level.
  * @param[out] quant_level_mod               The best color quant level if endpoints are the same.
+ * @param[out] tmpbuf                        Preallocated scratch buffers for the compressor.
  *
  * @return The actual number of candidate matches returned.
  */
@@ -2070,7 +2000,6 @@ unsigned int compute_ideal_endpoint_formats(
 	const block_size_descriptor& bsd,
 	const partition_info& pi,
 	const image_block& blk,
-	const error_weight_block& ewb,
 	const endpoints& ep,
 	const int* qwt_bitcounts,
 	const float* qwt_errors,
@@ -2078,7 +2007,8 @@ unsigned int compute_ideal_endpoint_formats(
 	int partition_format_specifiers[TUNE_MAX_TRIAL_CANDIDATES][BLOCK_MAX_PARTITIONS],
 	int block_mode[TUNE_MAX_TRIAL_CANDIDATES],
 	quant_method quant_level[TUNE_MAX_TRIAL_CANDIDATES],
-	quant_method quant_level_mod[TUNE_MAX_TRIAL_CANDIDATES]);
+	quant_method quant_level_mod[TUNE_MAX_TRIAL_CANDIDATES],
+	compression_working_buffers& tmpbuf);
 
 /**
  * @brief For a given 1 plane weight set recompute the endpoint colors.
@@ -2087,7 +2017,6 @@ unsigned int compute_ideal_endpoint_formats(
  * recompute the ideal colors for a specific weight set.
  *
  * @param         blk                        The image block color data to compress.
- * @param         ewb                        The image block weighted error data.
  * @param         pi                         The partition info for the current trial.
  * @param         di                         The weight grid decimation table.
  * @param         weight_quant_mode          The weight grid quantization level.
@@ -2098,7 +2027,6 @@ unsigned int compute_ideal_endpoint_formats(
  */
 void recompute_ideal_colors_1plane(
 	const image_block& blk,
-	const error_weight_block& ewb,
 	const partition_info& pi,
 	const decimation_info& di,
 	int weight_quant_mode,
@@ -2114,7 +2042,6 @@ void recompute_ideal_colors_1plane(
  * recompute the ideal colors for a specific weight set.
  *
  * @param         blk                               The image block color data to compress.
- * @param         ewb                               The image block weighted error data.
  * @param         bsd                               The block_size descriptor.
  * @param         di                                The weight grid decimation table.
  * @param         weight_quant_mode                 The weight grid quantization level.
@@ -2127,7 +2054,6 @@ void recompute_ideal_colors_1plane(
  */
 void recompute_ideal_colors_2planes(
 	const image_block& blk,
-	const error_weight_block& ewb,
 	const block_size_descriptor& bsd,
 	const decimation_info& di,
 	int weight_quant_mode,
@@ -2137,19 +2063,6 @@ void recompute_ideal_colors_2planes(
 	vfloat4& rgbs_vector,
 	vfloat4& rgbo_vector,
 	int plane2_component);
-
-/**
- * @brief Expand the deblock weights based on the config deblocking parameter.
- *
- * The approach to deblocking is a general purpose approach which elevates the error weight
- * significance of texels closest to the block periphery. This function computes the deblock weights
- * for each texel, which can be mixed on a block-by-block basis with the other error weighting
- * parameters to compute a specific per-texel weight for a trial.
- *
- * @param[in,out] ctx   The context to expand.
- */
-void expand_deblock_weights(
-	astcenc_context& ctx);
 
 /**
  * @brief Expand the angular tables needed for the alternative to PCA that we use.
@@ -2164,8 +2077,7 @@ void prepare_angular_tables();
  * @param      bsd                       The block size descriptor for the current trial.
  * @param      dec_weight_quant_uvalue   The decimated and quantized weight values.
  * @param      dec_weight_quant_sig      The significance of each weight.
- * @param[out] low_value                 The lowest weight to consider for each block mode.
- * @param[out] high_value                The highest weight to consider for each block mode.
+ * @param[out] tmpbuf                    Preallocated scratch buffers for the compressor.
  */
 void compute_angular_endpoints_1plane(
 	unsigned int tune_low_weight_limit,
@@ -2173,30 +2085,23 @@ void compute_angular_endpoints_1plane(
 	const block_size_descriptor& bsd,
 	const float* dec_weight_quant_uvalue,
 	const float* dec_weight_quant_sig,
-	float low_value[WEIGHTS_MAX_BLOCK_MODES],
-	float high_value[WEIGHTS_MAX_BLOCK_MODES]);
+	compression_working_buffers& tmpbuf);
 
 /**
  * @brief Compute the angular endpoints for two planes for each block mode.
  *
- * @param      tune_low_weight_limit    Weight count cutoff below which we use simpler searches.
- * @param     bsd                       The block size descriptor for the current trial.
- * @param     dec_weight_quant_uvalue   The decimated and quantized weight values.
- * @param     dec_weight_quant_sig      The significance of each weight.
- * @param[out] low_value1               The lowest weight p1 to consider for each block mode.
- * @param[out] high_value1              The highest weight p1 to consider for each block mode.
- * @param[out] low_value2               The lowest weight p2 to consider for each block mode.
- * @param[out] high_value2              The highest weight p2 to consider for each block mode.
+ * @param      tune_low_weight_limit     Weight count cutoff below which we use simpler searches.
+ * @param      bsd                       The block size descriptor for the current trial.
+ * @param      dec_weight_quant_uvalue   The decimated and quantized weight values.
+ * @param      dec_weight_quant_sig      The significance of each weight.
+ * @param[out] tmpbuf                    Preallocated scratch buffers for the compressor.
  */
 void compute_angular_endpoints_2planes(
 	unsigned int tune_low_weight_limit,
 	const block_size_descriptor& bsd,
 	const float* dec_weight_quant_uvalue,
 	const float* dec_weight_quant_sig,
-	float low_value1[WEIGHTS_MAX_BLOCK_MODES],
-	float high_value1[WEIGHTS_MAX_BLOCK_MODES],
-	float low_value2[WEIGHTS_MAX_BLOCK_MODES],
-	float high_value2[WEIGHTS_MAX_BLOCK_MODES]);
+	compression_working_buffers& tmpbuf);
 
 /* ============================================================================
   Functionality for high level compression and decompression access.
@@ -2206,14 +2111,12 @@ void compute_angular_endpoints_2planes(
  * @brief Compress an image block into a physical block.
  *
  * @param      ctx      The compressor context and configuration.
- * @param      image    The input image information.
  * @param      blk      The image block color data to compress.
  * @param[out] pcb      The physical compressed block output.
  * @param[out] tmpbuf   Preallocated scratch buffers for the compressor.
  */
 void compress_block(
 	const astcenc_context& ctx,
-	const astcenc_image& image,
 	const image_block& blk,
 	physical_compressed_block& pcb,
 	compression_working_buffers& tmpbuf);
@@ -2246,7 +2149,6 @@ void decompress_symbolic_block(
  * @param bsd      The block size information.
  * @param scb      The symbolic compressed encoding.
  * @param blk      The original image block color data.
- * @param ewb      The error weight block data.
  *
  * @return Returns the computed error, or a negative value if the encoding
  *         should be rejected for any reason.
@@ -2255,8 +2157,7 @@ float compute_symbolic_block_difference(
 	const astcenc_config& config,
 	const block_size_descriptor& bsd,
 	const symbolic_compressed_block& scb,
-	const image_block& blk,
-	const error_weight_block& ewb) ;
+	const image_block& blk);
 
 /**
  * @brief Convert a symbolic representation into a binary physical encoding.
