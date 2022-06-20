@@ -232,7 +232,6 @@ class EncoderBase():
 class Encoder2x(EncoderBase):
     """
     This class wraps the latest `astcenc` 2.x series binaries from main branch.
-    branch.
     """
     VERSION = "main"
 
@@ -254,9 +253,9 @@ class Encoder2x(EncoderBase):
         name = "astcenc-%s-%s" % (variant, self.VERSION)
         if binary is None:
             if os.name == 'nt':
-                binary = "./astcenc/astcenc-%s.exe" % variant
+                binary = "./bin/astcenc-%s.exe" % variant
             else:
-                binary = "./astcenc/astcenc-%s" % variant
+                binary = "./bin/astcenc-%s" % variant
 
         super().__init__(name, variant, binary)
 

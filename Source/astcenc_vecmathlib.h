@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // ----------------------------------------------------------------------------
-// Copyright 2019-2021 Arm Limited
+// Copyright 2019-2022 Arm Limited
 // Copyright 2008 Jose Fonseca
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -60,10 +60,13 @@
 
 #if !defined(__clang__) && defined(_MSC_VER)
 	#define ASTCENC_SIMD_INLINE __forceinline
+	#define ASTCENC_NO_INLINE
 #elif defined(__GNUC__) && !defined(__clang__)
 	#define ASTCENC_SIMD_INLINE __attribute__((always_inline)) inline
+	#define ASTCENC_NO_INLINE __attribute__ ((noinline))
 #else
 	#define ASTCENC_SIMD_INLINE __attribute__((always_inline, nodebug)) inline
+	#define ASTCENC_NO_INLINE __attribute__ ((noinline))
 #endif
 
 #if ASTCENC_AVX >= 2
@@ -75,6 +78,13 @@
 	#define ASTCENC_SIMD_WIDTH 8
 
 	using vfloat = vfloat8;
+
+	#if defined(ASTCENC_NO_INVARIANCE)
+		using vfloatacc = vfloat8;
+	#else
+		using vfloatacc = vfloat4;
+	#endif
+
 	using vint = vint8;
 	using vmask = vmask8;
 
@@ -89,6 +99,7 @@
 	#define ASTCENC_SIMD_WIDTH 4
 
 	using vfloat = vfloat4;
+	using vfloatacc = vfloat4;
 	using vint = vint4;
 	using vmask = vmask4;
 
@@ -103,6 +114,7 @@
 	#define ASTCENC_SIMD_WIDTH 4
 
 	using vfloat = vfloat4;
+	using vfloatacc = vfloat4;
 	using vint = vint4;
 	using vmask = vmask4;
 
@@ -134,6 +146,7 @@
 	#define ASTCENC_SIMD_WIDTH 4
 
 	using vfloat = vfloat4;
+	using vfloatacc = vfloat4;
 	using vint = vint4;
 	using vmask = vmask4;
 
@@ -201,7 +214,7 @@ ASTCENC_SIMD_INLINE vfloat change_sign(vfloat a, vfloat b)
 {
 	vint ia = float_as_int(a);
 	vint ib = float_as_int(b);
-	vint sign_mask((int)0x80000000);
+	vint sign_mask(static_cast<int>(0x80000000));
 	vint r = ia ^ (ib & sign_mask);
 	return int_as_float(r);
 }
@@ -227,7 +240,7 @@ ASTCENC_SIMD_INLINE vfloat atan2(vfloat y, vfloat x)
 {
 	vfloat z = atan(abs(y / x));
 	vmask xmask = vmask(float_as_int(x).m);
-	return change_sign(select(z, vfloat(astc::PI) - z, xmask), y);
+	return change_sign(select_msb(z, vfloat(astc::PI) - z, xmask), y);
 }
 
 /*

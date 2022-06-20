@@ -133,7 +133,7 @@ spec:
                   export CXX=clang++-9
                   mkdir build_rel
                   cd build_rel
-                  cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../ -DISA_AVX2=ON -DISA_SSE41=ON -DISA_SSE2=ON -DISA_NONE=ON -DPACKAGE=x64 ..
+                  cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../ -DISA_AVX2=ON -DISA_SSE41=ON -DISA_SSE2=ON -DPACKAGE=x64 ..
                   make install package -j4
                 '''
               }
@@ -144,7 +144,7 @@ spec:
                   export CXX=clang++-9
                   mkdir build_reldec
                   cd build_reldec
-                  cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../ -DISA_AVX2=ON -DISA_SSE41=ON -DISA_SSE2=ON -DISA_NONE=ON -DDECOMPRESSOR=ON ..
+                  cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../ -DISA_AVX2=ON -DISA_SSE41=ON -DISA_SSE2=ON -DDECOMPRESSOR=ON ..
                   make -j4
                 '''
               }
@@ -167,7 +167,7 @@ spec:
             }
           }
         }
-        /* Build for Windows on x86-64 using MSVC */
+        /* Build for Windows on x86-64 using MSVC ClangCL */
         stage('Windows') {
           agent {
             label 'Windows'
@@ -184,8 +184,10 @@ spec:
                   call c:\\progra~2\\micros~1\\2019\\buildtools\\vc\\auxiliary\\build\\vcvars64.bat
                   mkdir build_rel
                   cd build_rel
-                  cmake -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../ -DISA_AVX2=ON -DISA_SSE41=ON -DISA_SSE2=ON -DPACKAGE=x64 ..
-                  nmake install package
+                  cmake -G "Visual Studio 16 2019" -T ClangCL -DCMAKE_INSTALL_PREFIX=../ -DISA_AVX2=ON -DISA_SSE41=ON -DISA_SSE2=ON -DPACKAGE=x64 ..
+                  msbuild astcencoder.sln -property:Configuration=Release
+                  msbuild PACKAGE.vcxproj -property:Configuration=Release
+                  msbuild INSTALL.vcxproj -property:Configuration=Release
                 '''
               }
             }

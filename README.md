@@ -58,7 +58,10 @@ from 0.89 bits/pixel up to 8 bits/pixel.
 Release build binaries for the `astcenc` stable releases are provided in the
 [GitHub Releases page][3].
 
-**Latest 3.x stable release:** 3.3
+**Latest 4.x stable release:** TBD
+* Change log: [4.x series](./Docs/ChangeLog-4x.md)
+
+**Latest 3.x stable release:** 3.7
 * Change log: [3.x series](./Docs/ChangeLog-3x.md)
 
 **Latest 2.x stable release:** 2.5
@@ -86,12 +89,12 @@ For Apple silicon macOS devices we provide:
 ## Repository branches
 
 The `main` branch is an active development branch for the compressor. It aims
-to be a stable branch, but as it is used for ongoing development expect it to
-have some volatility.
+to be a stable branch for the latest major release series, but as it is used
+for ongoing development expect it to have some volatility.
 
-The `2.x` branch is a stable branch for the 2.x release series. It is no longer
-under active development, but is a supported branch that will continue to get
-backported bug fixes.
+The `2.x` and `3.x` branches are a stable branches for the 2.x and 3.x release
+series. They are no longer under active development, but are supported branches
+that will continue to get backported bug fixes.
 
 The `1.x` branch is a stable branch for the 1.x release series. It is no longer
 under active development or getting bug fixes.
@@ -223,7 +226,7 @@ Graphics forums](https://community.arm.com/graphics/).
 
 - - -
 
-_Copyright © 2013-2021, Arm Limited and contributors. All rights reserved._
+_Copyright © 2013-2022, Arm Limited and contributors. All rights reserved._
 
 [1]: ./Docs/FormatOverview.md
 [2]: https://www.khronos.org/registry/DataFormat/specs/1.3/dataformat.1.3.html#ASTC

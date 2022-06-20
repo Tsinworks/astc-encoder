@@ -175,6 +175,9 @@ COMPRESSION
                nml.xy = nml.xy * 2.0 - 1.0;           // Unpack to [-1,1]
                nml.z = sqrt(1 - dot(nml.xy, nml.xy)); // Compute Z
 
+           Alternative component swizzles can be set with -esw and -dsw
+           parameters.
+
        -rgbm <max>
            The input texture is an RGBM encoded texture, storing values HDR
            values between 0 and <max> in an LDR container format with a
@@ -557,7 +560,7 @@ void astcenc_print_header()
 	const char* f16ctype = "";
 #endif
 
-	unsigned int bits = (int)(sizeof(void*) * 8);
+	unsigned int bits = static_cast<unsigned int>(sizeof(void*) * 8);
 	printf(astcenc_copyright_string,
 	       VERSION_STRING, bits, simdtype, pcnttype, f16ctype, YEAR_STRING);
 }

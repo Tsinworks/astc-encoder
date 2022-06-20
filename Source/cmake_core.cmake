@@ -115,6 +115,16 @@ macro(astcenc_set_properties NAME)
             # MSVC defines
             $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>)
 
+    # Work around compiler bug in MSVC when targeting arm64
+    # https://developercommunity.visualstudio.com/t/inlining-turns-constant-into-register-operand-for/1394798
+    # https://github.com/microsoft/vcpkg/pull/24869
+    if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+        if(CPU_ARCHITECTURE STREQUAL armv8 OR CPU_ARCHITECTURE STREQUAL arm64)
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /d2ssa-cfg-sink-")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /d2ssa-cfg-sink-")
+        endif()
+    endif()
+
     if(${DECOMPRESSOR})
         target_compile_definitions(${NAME}
             PRIVATE
@@ -141,6 +151,7 @@ macro(astcenc_set_properties NAME)
             # MSVC compiler defines
             $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
             $<$<CXX_COMPILER_ID:MSVC>:/fp:strict>
+            $<$<CXX_COMPILER_ID:MSVC>:/wd4324>
 
             # G++ and Clang++ compiler defines
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall>
@@ -159,12 +170,13 @@ macro(astcenc_set_properties NAME)
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-atomic-implicit-seq-cst>
 
             # Clang 10 also throws up warnings we need to investigate (ours)
-            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-old-style-cast>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-cast-align>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-sign-conversion>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-implicit-int-conversion>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-shift-sign-overflow>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-format-nonliteral>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-reserved-identifier>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-cast-function-type>
 
             $<$<CXX_COMPILER_ID:Clang>:-Wdocumentation>)
 
@@ -173,7 +185,7 @@ macro(astcenc_set_properties NAME)
             # Use pthreads on Linux/macOS
             $<$<PLATFORM_ID:Linux,Darwin>:-pthread>)
 
-    if(${ENABLE_ASAN})
+    if(${ASAN})
         target_compile_options(${NAME}
             PRIVATE
                 $<$<CXX_COMPILER_ID:${CLANG_LIKE}>:-fsanitize=address>)
@@ -181,6 +193,12 @@ macro(astcenc_set_properties NAME)
         target_link_options(${NAME}
             PRIVATE
                 $<$<CXX_COMPILER_ID:${CLANG_LIKE}>:-fsanitize=address>)
+    endif()
+
+    if(${NO_INVARIANCE})
+            target_compile_definitions(${NAME}
+                PRIVATE
+                    ASTCENC_NO_INVARIANCE=1)
     endif()
 
     if(${CLI})
@@ -217,6 +235,12 @@ macro(astcenc_set_properties NAME)
                     ASTCENC_POPCNT=0
                     ASTCENC_F16C=0)
         endif()
+
+        # Workaround MSVC codegen bug for NEON builds see:
+        # https://developercommunity.visualstudio.com/t/inlining-turns-constant-into-register-operand-for/1394798
+        target_compile_options(${NAME}
+            PRIVATE
+            $<$<CXX_COMPILER_ID:MSVC>:/d2ssa-cfg-sink->)
 
     elseif((${ISA_SIMD} MATCHES "sse2") OR (${UNIVERSAL_BUILD} AND ${ISA_SSE2}))
         if(NOT ${UNIVERSAL_BUILD})
@@ -272,6 +296,19 @@ macro(astcenc_set_properties NAME)
                 $<$<CXX_COMPILER_ID:MSVC>:/arch:AVX2>
                 $<$<CXX_COMPILER_ID:AppleClang>:-Wno-unused-command-line-argument>)
 
+        # Non-invariant builds enable us to loosen the compiler constraints on
+        # floating point, but this is only worth doing on CPUs with AVX2 because
+        # this implies we can also enable the FMA instruction set extensions
+        # which significantly improve performance. Note that this DOES reduce
+        # image quality by up to 0.2 dB (normally much less), but buys an
+        # average of 10-15% performance improvement ...
+        if(${NO_INVARIANCE})
+            target_compile_options(${NAME}
+                PRIVATE
+                    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-mfma>
+                    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=fast>)
+        endif()
+
     endif()
 
 endmacro()
@@ -280,6 +317,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     string(CONCAT EXTERNAL_CXX_FLAGS
             " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -fno-strict-aliasing>"
             " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-unused-parameter>"
+            " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-old-style-cast>"
             " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-double-promotion>"
             " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-zero-as-null-pointer-constant>"
             " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-disabled-macro-expansion>"
@@ -288,7 +326,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-implicit-fallthrough>"
             " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-tautological-type-limit-compare>"
             " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-cast-qual>"
-            " $<$<CXX_COMPILER_ID:Clang>: -Wno-missing-prototypes>")
+            " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-reserved-identifier>"
+            " $<$<CXX_COMPILER_ID:Clang>: -Wno-missing-prototypes>"
+            " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-suggest-override>"
+            " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-used-but-marked-unused>"
+            " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-noexcept-type>"
+            " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-comma>"
+            " $<$<NOT:$<CXX_COMPILER_ID:MSVC>>: -Wno-c99-extensions>")
 
     set_source_files_properties(astcenccli_image_external.cpp
         PROPERTIES
@@ -299,8 +343,16 @@ astcenc_set_properties(${ASTC_TARGET}-static)
 astcenc_set_properties(lib${ASTC_TARGET})
 target_compile_definitions(lib${ASTC_TARGET} PRIVATE ASTCENC_DYNAMIC_LIBRARY=1)
 
+    target_compile_options(${ASTC_TARGET}-static
+        PRIVATE
+            $<$<CXX_COMPILER_ID:MSVC>:/W4>)
+
 if(${CLI})
     astcenc_set_properties(${ASTC_TARGET})
+
+    target_compile_options(${ASTC_TARGET}
+        PRIVATE
+            $<$<CXX_COMPILER_ID:MSVC>:/W3>)
 
     string(TIMESTAMP astcencoder_YEAR "%Y")
 
