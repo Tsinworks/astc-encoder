@@ -18,8 +18,9 @@
 /**
  * @brief Functions for codec library front-end.
  */
-
+//extern "C" {
 #include "astcenc.h"
+//}
 #include "astcenccli_internal.h"
 
 #include <cassert>

@@ -159,8 +159,12 @@
 #ifndef ASTCENC_INCLUDED
 #define ASTCENC_INCLUDED
 
+#ifdef __cplusplus
 #include <cstddef>
 #include <cstdint>
+#else
+#include <stdint.h>
+#endif
 
 #if defined(ASTCENC_DYNAMIC_LIBRARY)
 	#if defined(_MSC_VER)
@@ -632,6 +636,9 @@ struct astcenc_block_info
 	uint8_t partition_assignment[216];
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 /**
  * Populate a codec config based on default settings.
  *
@@ -798,4 +805,7 @@ ASTCENC_PUBLIC astcenc_error astcenc_get_block_info(
 ASTCENC_PUBLIC const char* astcenc_get_error_string(
 	astcenc_error status);
 
+#ifdef __cplusplus
+}
+#endif
 #endif
