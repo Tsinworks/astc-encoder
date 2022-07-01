@@ -204,6 +204,7 @@ printopt("Unit tests     " ${UNITTEST})
 
 # Subcomponents
 add_subdirectory(Source)
+add_subdirectory(Extension)
 
 # Configure package archive
 if(PACKAGE)

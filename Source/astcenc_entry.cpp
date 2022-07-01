@@ -472,7 +472,7 @@ astcenc_error astcenc_config_init(
 
 	// Zero init all config fields; although most of will be over written
 	std::memset(&config, 0, sizeof(config));
-
+	
 	// Process the block size
 	block_z = astc::max(block_z, 1u); // For 2D blocks Z==0 is accepted, but convert to 1
 	status = validate_block_size(block_x, block_y, block_z);

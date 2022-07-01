@@ -1,0 +1,113 @@
+//#define ASTCENC_DYNAMIC_LIBRARY
+
+#define ASTCENC_SSE 41
+//#pragma warning(disable: 9002)
+
+#define quant_and_xfer_tables quant_and_xfer_tables_sse
+#define color_quant_tables color_quant_tables_sse
+#define color_unquant_tables color_unquant_tables_sse
+#define quant_mode_table quant_mode_table_sse
+
+#define astcenc_config_init astcenc_config_init_sse
+#define astcenc_context_alloc astcenc_context_alloc_sse
+#define astcenc_compress_image astcenc_compress_image_sse
+#define astcenc_compress_reset astcenc_compress_reset_sse
+#define astcenc_decompress_image astcenc_decompress_image_sse
+#define astcenc_decompress_reset astcenc_decompress_reset_sse
+#define astcenc_context_free astcenc_context_free_sse
+#define astcenc_get_block_info astcenc_get_block_info_sse
+#define astcenc_get_error_string astcenc_get_error_string_sse
+
+#define compute_averages_and_variances compute_averages_and_variances_sse
+#define compute_symbolic_block_difference compute_symbolic_block_difference_sse
+#define expand_deblock_weights expand_deblock_weights_sse
+#define fetch_image_block fetch_image_block_sse
+#define write_image_block write_image_block_sse
+#define init_compute_averages_and_variances init_compute_averages_and_variances_sse
+#define term_block_size_descriptor term_block_size_descriptor_sse
+
+//#define rand_init rand_init_sse
+#define float_to_sf16 float_to_sf16_sse
+#define sf16_to_float sf16_to_float_sse
+#define init_block_size_descriptor init_block_size_descriptor_sse
+#define init_partition_tables init_partition_tables_sse
+#define get_2d_percentile_table get_2d_percentile_table_sse
+#define is_legal_2d_block_size is_legal_2d_block_size_sse
+#define is_legal_3d_block_size is_legal_3d_block_size_sse
+#define get_ise_sequence_bitcount get_ise_sequence_bitcount_sse
+#define decode_ise decode_ise_sse
+#define encode_ise encode_ise_sse
+
+#define compute_avgs_and_dirs_2_comp compute_avgs_and_dirs_2_comp_sse
+#define compute_avgs_and_dirs_3_comp compute_avgs_and_dirs_3_comp_sse
+#define compute_avgs_and_dirs_3_comp_rgb compute_avgs_and_dirs_3_comp_rgb_sse
+
+#define compute_avgs_and_dirs_4_comp compute_avgs_and_dirs_4_comp_sse
+#define compute_error_squared_rgb compute_error_squared_rgb_sse
+#define compute_error_squared_rgba compute_error_squared_rgba_sse
+#define find_best_partition_candidates find_best_partition_candidates_sse
+#define init_compute_averages init_compute_averages_sse
+#define compute_averages compute_averages_sse
+#define load_image_block load_image_block_sse
+#define load_image_block_fast_ldr load_image_block_fast_ldr_sse
+#define store_image_block store_image_block_sse
+#define compute_ideal_colors_and_weights_1plane compute_ideal_colors_and_weights_1plane_sse
+
+#define compute_ideal_colors_and_weights_2planes compute_ideal_colors_and_weights_2planes_sse
+#define compute_ideal_weights_for_decimation compute_ideal_weights_for_decimation_sse
+#define compute_quantized_weights_for_decimation compute_quantized_weights_for_decimation_sse
+#define compute_error_of_weight_set_1plane compute_error_of_weight_set_1plane_sse
+#define compute_error_of_weight_set_2planes compute_error_of_weight_set_2planes_sse
+#define pack_color_endpoints pack_color_endpoints_sse
+#define unpack_color_endpoints unpack_color_endpoints_sse
+#define unpack_weights unpack_weights_sse
+#define compute_ideal_endpoint_formats compute_ideal_endpoint_formats_sse
+#define recompute_ideal_colors_1plane recompute_ideal_colors_1plane_sse
+#define recompute_ideal_colors_2planes recompute_ideal_colors_2planes_sse
+
+
+#define prepare_angular_tables prepare_angular_tables_sse
+#define compute_angular_endpoints_1plane compute_angular_endpoints_1plane_sse
+#define compute_angular_endpoints_2planes compute_angular_endpoints_2planes_sse
+#define compress_block compress_block_sse
+#define decompress_symbolic_block decompress_symbolic_block_sse
+#define compute_symbolic_block_difference_1plane compute_symbolic_block_difference_1plane_sse
+#define compute_symbolic_block_difference_2plane compute_symbolic_block_difference_2plane_sse
+#define compute_symbolic_block_difference_1plane_1partition compute_symbolic_block_difference_1plane_1partition_sse
+#define symbolic_to_physical symbolic_to_physical_sse
+#define physical_to_symbolic physical_to_symbolic_sse
+
+
+#include "astcenc_averages_and_directions.cpp" // SIMD
+#include "astcenc_block_sizes.cpp"
+#include "astcenc_color_quantize.cpp"
+
+#define unquant_color astcenc_unquant_color
+#include "astcenc_color_unquantize.cpp"
+#undef unquant_color
+
+#include "astcenc_compress_symbolic.cpp" // SIMD
+#include "astcenc_compute_variance.cpp"
+#include "astcenc_decompress_symbolic.cpp" // SIMD
+#include "astcenc_diagnostic_trace.cpp"
+#include "astcenc_entry.cpp"
+#include "astcenc_find_best_partitioning.cpp"
+#include "astcenc_ideal_endpoints_and_weights.cpp"
+#include "astcenc_image.cpp" // SIMD
+#include "astcenc_integer_sequence.cpp"
+//#include "astcenc_mathlib.cpp"
+#include "astcenc_mathlib_softfloat.cpp"
+#include "astcenc_partition_tables.cpp"
+#include "astcenc_percentile_tables.cpp"
+#include "astcenc_pick_best_endpoint_format.cpp" // SIMD
+//#include "astcenc_platform_isa_detection.cpp"
+#include "astcenc_quantization.cpp"
+
+#define write_bits astcenc_write_bits
+#define read_bits astcenc_read_bits
+#include "astcenc_symbolic_physical.cpp"
+#undef read_bits
+#undef write_bits
+
+#include "astcenc_weight_align.cpp" // SIMD
+#include "astcenc_weight_quant_xfer_tables.cpp"

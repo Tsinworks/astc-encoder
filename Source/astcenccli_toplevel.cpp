@@ -18,8 +18,9 @@
 /**
  * @brief Functions for codec library front-end.
  */
-
+//extern "C" {
 #include "astcenc.h"
+//}
 #include "astcenccli_internal.h"
 
 #include <cassert>
@@ -94,6 +95,8 @@ static const astcenc_operation ASTCENC_OP_TEST =
                                ASTCENC_STAGE_DECOMPRESS |
                                ASTCENC_STAGE_COMPARE |
                                ASTCENC_STAGE_ST_NCOMP;
+
+static bool g_use_command_line_v1x = false;
 
 /**
  * @brief Image preprocesing tasks prior to encoding.
@@ -425,6 +428,12 @@ static int parse_commandline_options(
 			profile = modes[i].decode_mode;
 			break;
 		}
+		else if (!strcmp("-c", argv[1])) {
+			operation = ASTCENC_OP_COMPRESS;
+			profile = ASTCENC_PRF_LDR;
+			g_use_command_line_v1x = true;
+			break;
+		}
 	}
 
 	if (operation == ASTCENC_OP_UNKNOWN)
@@ -471,6 +480,7 @@ static int init_astcenc_config(
 	}
 
 	float quality = 0.0f;
+	astcenc_preset preset = ASTCENC_PRESET_MEDIUM;
 	preprocess = ASTCENC_PP_NONE;
 
 	// parse the command line's encoding options.
@@ -501,29 +511,35 @@ static int init_astcenc_config(
 			return 1;
 		}
 
-		if (!strcmp(argv[5], "-fastest"))
+		if (!strcmp(argv[5], "-fastest") || (g_use_command_line_v1x && !strcmp(argv[5], "-veryfast")))
 		{
 			quality = ASTCENC_PRE_FASTEST;
+			preset = ASTCENC_PRESET_FASTEST;
 		}
 		else if (!strcmp(argv[5], "-fast"))
 		{
 			quality = ASTCENC_PRE_FAST;
+			preset = ASTCENC_PRESET_FAST;
 		}
 		else if (!strcmp(argv[5], "-medium"))
 		{
 			quality = ASTCENC_PRE_MEDIUM;
+			preset = ASTCENC_PRESET_MEDIUM;
 		}
 		else if (!strcmp(argv[5], "-thorough"))
 		{
 			quality = ASTCENC_PRE_THOROUGH;
+			preset = ASTCENC_PRESET_THOROUGH;
 		}
 		else if (!strcmp(argv[5], "-exhaustive"))
 		{
 			quality = ASTCENC_PRE_EXHAUSTIVE;
+			preset = ASTCENC_PRESET_EXHAUSTIVE;
 		}
 		else if (is_float(argv[5]))
 		{
 			quality = static_cast<float>(atof(argv[5]));
+			preset = ASTCENC_PRESET_MEDIUM;
 		}
 		else
 		{
@@ -603,6 +619,7 @@ static int init_astcenc_config(
 
 	astcenc_error status = astcenc_config_init(profile, block_x, block_y, block_z,
 	                                           quality, flags, &config);
+	config.input_preset = preset;
 	if (status == ASTCENC_ERR_BAD_BLOCK_SIZE)
 	{
 		printf("ERROR: Block size '%s' is invalid\n", argv[4]);
@@ -686,7 +703,7 @@ static int edit_astcenc_config(
 			config.v_a_mean = static_cast<float>(atof(argv[argidx - 2]));
 			config.v_a_stdev = static_cast<float>(atof(argv[argidx - 1]));
 		}
-		else if (!strcmp(argv[argidx], "-cw"))
+		else if (!strcmp(argv[argidx], "-cw") || (g_use_command_line_v1x && !strcmp(argv[argidx], "-ch")))
 		{
 			argidx += 5;
 			if (argidx > argc)
@@ -1057,6 +1074,14 @@ static int edit_astcenc_config(
 			config.trace_file_path = argv[argidx - 1];
 		}
 #endif
+		else if (g_use_command_line_v1x && (
+			!strcmp(argv[argidx], "-oplimit") ||
+			!strcmp(argv[argidx], "-mincorrel")
+			)) 
+		{
+			printf("WARN: Argument '%s' (used for astcenc 1.x)  is deprecated\n", argv[argidx]);
+			argidx += 2;
+        }
 		else // check others as well
 		{
 			printf("ERROR: Argument '%s' not recognized\n", argv[argidx]);
@@ -1067,6 +1092,11 @@ static int edit_astcenc_config(
 	if (cli_config.thread_count <= 0)
 	{
 		cli_config.thread_count = get_cpu_count();
+	}
+
+	if (g_use_command_line_v1x)
+	{
+		cli_config.y_flip = 1;
 	}
 
 #if defined(ASTCENC_DIAGNOSTICS)
