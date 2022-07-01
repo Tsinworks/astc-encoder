@@ -1480,6 +1480,8 @@ struct astcenc_context
 	 */
 	TraceLog* trace_log;
 #endif
+
+	unsigned int use_gpu;
 };
 
 /* ============================================================================
