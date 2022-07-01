@@ -156,8 +156,12 @@
 #ifndef ASTCENC_INCLUDED
 #define ASTCENC_INCLUDED
 
+#ifdef __cplusplus
 #include <cstddef>
 #include <cstdint>
+#else
+#include <stdint.h>
+#endif
 
 #if defined(ASTCENC_DYNAMIC_LIBRARY)
 	#if defined(_MSC_VER)
@@ -240,6 +244,14 @@ static const float ASTCENC_PRE_THOROUGH = 98.0f;
 
 /** @brief The exhaustive, highest quality, search preset. */
 static const float ASTCENC_PRE_EXHAUSTIVE = 100.0f;
+
+enum astcenc_preset {
+	ASTCENC_PRESET_FASTEST,
+	ASTCENC_PRESET_FAST,
+	ASTCENC_PRESET_MEDIUM,
+	ASTCENC_PRESET_THOROUGH,
+	ASTCENC_PRESET_EXHAUSTIVE,
+};
 
 /**
  * @brief A codec component swizzle selector.
@@ -446,6 +458,8 @@ struct astcenc_config
 
 	/** @brief The alpha component weight scale for error weighting (-cw). */
 	float cw_a_weight;
+
+	astcenc_preset input_preset;
 
 	/**
 	 * @brief The radius for any alpha-weight scaling (-a).
@@ -666,6 +680,9 @@ struct astcenc_block_info
 	uint8_t partition_assignment[216];
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 /**
  * Populate a codec config based on default settings.
  *
@@ -715,6 +732,32 @@ ASTCENC_PUBLIC astcenc_error astcenc_config_init(
 ASTCENC_PUBLIC astcenc_error astcenc_context_alloc(
 	const astcenc_config* config,
 	unsigned int thread_count,
+	astcenc_context** context);
+
+/**
+ * @brief Allocate a new codec context (GPU-accelerated) based on a config.
+ *
+ * This function allocates all of the memory resources and threads needed by the codec. This can be
+ * slow, so it is recommended that contexts are reused to serially compress or decompress multiple
+ * images to amortize setup cost.
+ *
+ * Contexts can be allocated to support only decompression using the @c ASTCENC_FLG_DECOMPRESS_ONLY
+ * flag when creating the configuration. The compression functions will fail if invoked. For a
+ * decompress-only library build the @c ASTCENC_FLG_DECOMPRESS_ONLY flag must be set when creating
+ * any context.
+ *
+ * @param[in]  config         Codec config.
+ * @param      thread_count   Thread count to configure for.
+ * @param      prefer_gpu	  Prefer gpu accelerated compression
+ * @param[out] context        Location to store an opaque context pointer.
+ *
+ * @return @c ASTCENC_SUCCESS on success, or an error if context creation failed.
+ */
+ASTCENC_PUBLIC astcenc_error astcenc_context_alloc2(
+	const astcenc_config* config,
+	size_t size_of_config,
+	unsigned int thread_count,
+	unsigned int prefer_gpu,
 	astcenc_context** context);
 
 /**
@@ -832,4 +875,7 @@ ASTCENC_PUBLIC astcenc_error astcenc_get_block_info(
 ASTCENC_PUBLIC const char* astcenc_get_error_string(
 	astcenc_error status);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

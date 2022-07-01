@@ -23,6 +23,13 @@
 
 #include <cassert>
 
+#ifdef min
+#undef min
+#endif
+
+#ifdef max
+#undef max
+#endif
 /**
  * @brief Write up to 8 bits at an arbitrary bit offset.
  *
